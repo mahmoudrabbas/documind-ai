@@ -115,20 +115,128 @@ export const GUIDE_I18N: Record<string, GuideMessage> = {
     ar: "انقر على «المستندات» في الشريط الجانبي لفتح صفحة المستندات.",
   },
   "copilot.guide.documents.delete.step2.title": {
-    en: "Open the row menu",
-    ar: "افتح قائمة الصف",
+    en: "Open a document",
+    ar: "افتح مستندًا",
   },
   "copilot.guide.documents.delete.step2.instruction": {
-    en: "Find the document you want to delete and open its row actions menu.",
-    ar: "ابحث عن المستند الذي تريد حذفه وافتح قائمة إجراءات الصف.",
+    en: "Find the document you want to delete and click its View button to open it.",
+    ar: "ابحث عن المستند الذي تريد حذفه وانقر على زر «عرض» لفتحه.",
   },
   "copilot.guide.documents.delete.step3.title": {
+    en: "Move it to trash",
+    ar: "انقل إلى المهملات",
+  },
+  "copilot.guide.documents.delete.step3.instruction": {
+    en: "Click Move to Trash in the document panel.",
+    ar: "انقر على «نقل إلى المهملات» في لوحة المستند.",
+  },
+  "copilot.guide.documents.delete.step4.title": {
     en: "Confirm the deletion",
     ar: "أكّد الحذف",
   },
-  "copilot.guide.documents.delete.step3.instruction": {
-    en: "Choose Delete from the menu. Deleting sends the document to trash.",
-    ar: "اختر «حذف» من القائمة. الحذف ينقل المستند إلى سلة المهملات.",
+  "copilot.guide.documents.delete.step4.instruction": {
+    en: "Confirm the action. The document moves to trash and can be restored later.",
+    ar: "أكّد العملية. ينتقل المستند إلى سلة المهملات ويمكن استعادته لاحقًا.",
+  },
+
+  // ── documents.download ─────────────────────────────────────────────────────
+  "copilot.guide.documents.download.title": {
+    en: "Download a document",
+    ar: "تنزيل مستند",
+  },
+  "copilot.guide.documents.download.step1.title": {
+    en: "Open Documents",
+    ar: "افتح المستندات",
+  },
+  "copilot.guide.documents.download.step1.instruction": {
+    en: "Click Documents in the sidebar to open the documents page.",
+    ar: "انقر على «المستندات» في الشريط الجانبي لفتح صفحة المستندات.",
+  },
+  "copilot.guide.documents.download.step2.title": {
+    en: "Open a document",
+    ar: "افتح مستندًا",
+  },
+  "copilot.guide.documents.download.step2.instruction": {
+    en: "Find the document you want and click its View button to open it.",
+    ar: "ابحث عن المستند المطلوب وانقر على زر «عرض» لفتحه.",
+  },
+  "copilot.guide.documents.download.step3.title": {
+    en: "View the document panel",
+    ar: "استعرض لوحة المستند",
+  },
+  "copilot.guide.documents.download.step3.instruction": {
+    en: "The document panel shows details, versions, and available actions.",
+    ar: "تعرض اللوحة تفاصيل المستند والإصدارات والإجراءات المتاحة.",
+  },
+  "copilot.guide.documents.download.step4.title": {
+    en: "Download the file",
+    ar: "نزّل الملف",
+  },
+  "copilot.guide.documents.download.step4.instruction": {
+    en: "Click Download to save the current version of the document.",
+    ar: "انقر على «تنزيل» لحفظ النسخة الحالية من المستند.",
+  },
+
+  // ── documents.editMetadata ─────────────────────────────────────────────────
+  "copilot.guide.documents.editMetadata.title": {
+    en: "Edit document details",
+    ar: "تعديل بيانات المستند",
+  },
+  "copilot.guide.documents.editMetadata.step1.title": {
+    en: "Open Documents",
+    ar: "افتح المستندات",
+  },
+  "copilot.guide.documents.editMetadata.step1.instruction": {
+    en: "Click Documents in the sidebar to open the documents page.",
+    ar: "انقر على «المستندات» في الشريط الجانبي لفتح صفحة المستندات.",
+  },
+  "copilot.guide.documents.editMetadata.step2.title": {
+    en: "Open a document",
+    ar: "افتح مستندًا",
+  },
+  "copilot.guide.documents.editMetadata.step2.instruction": {
+    en: "Find the document you want to update and click its View button to open it.",
+    ar: "ابحث عن المستند الذي تريد تحديثه وانقر على زر «عرض» لفتحه.",
+  },
+  "copilot.guide.documents.editMetadata.step3.title": {
+    en: "Start editing",
+    ar: "ابدأ التعديل",
+  },
+  "copilot.guide.documents.editMetadata.step3.instruction": {
+    en: "Click Edit Details in the document panel to open the edit form.",
+    ar: "انقر على «تعديل التفاصيل» في لوحة المستند لفتح نموذج التعديل.",
+  },
+  "copilot.guide.documents.editMetadata.step4.title": {
+    en: "Update the title",
+    ar: "حدّث العنوان",
+  },
+  "copilot.guide.documents.editMetadata.step4.instruction": {
+    en: "Type a clear, descriptive title for the document.",
+    ar: "اكتب عنوانًا واضحًا ووصفيًا للمستند.",
+  },
+  "copilot.guide.documents.editMetadata.step5.title": {
+    en: "Update the description",
+    ar: "حدّث الوصف",
+  },
+  "copilot.guide.documents.editMetadata.step5.instruction": {
+    en: "Adjust the description to summarize the document content.",
+    ar: "عدّل الوصف ليُلخص محتوى المستند.",
+  },
+  "copilot.guide.documents.editMetadata.step6.title": {
+    en: "Update the tags",
+    ar: "حدّث الوسوم",
+  },
+  "copilot.guide.documents.editMetadata.step6.instruction": {
+    en: "Add or remove tags to help others find the document.",
+    ar: "أضف أو أزل الوسوم لمساعدة الآخرين على العثور على المستند.",
+  },
+  "copilot.guide.documents.editMetadata.step7.title": {
+    en: "Save your changes",
+    ar: "احفظ تغييراتك",
+  },
+  "copilot.guide.documents.editMetadata.step7.instruction": {
+    en: "Click Save to apply the updated details to the document.",
+    ar: "انقر على «حفظ» لتطبيق التفاصيل المحدّثة على المستند.",
   },
 
   // ── users.invite ───────────────────────────────────────────────────────────
@@ -183,6 +291,60 @@ export const GUIDE_I18N: Record<string, GuideMessage> = {
   "copilot.guide.users.invite.step6.instruction": {
     en: "Click Send Invitation to deliver the invite by email.",
     ar: "انقر على «إرسال الدعوة» لتسليمها عبر البريد الإلكتروني.",
+  },
+  "copilot.guide.users.invite.step7.title": {
+    en: "Verify the invitation",
+    ar: "تحقق من الدعوة",
+  },
+  "copilot.guide.users.invite.step7.instruction": {
+    en: "The invited person appears in the directory with a pending status until they accept.",
+    ar: "يظهر الشخص المدعو في الدليل بحالة «قيد الانتظار» حتى يقبل الدعوة.",
+  },
+
+  // ── users.list ─────────────────────────────────────────────────────────────
+  "copilot.guide.users.list.title": {
+    en: "Browse the user directory",
+    ar: "تصفح دليل المستخدمين",
+  },
+  "copilot.guide.users.list.step1.title": {
+    en: "Open Users",
+    ar: "افتح المستخدمين",
+  },
+  "copilot.guide.users.list.step1.instruction": {
+    en: "Click Users in the sidebar to open the users page.",
+    ar: "انقر على «المستخدمين» في الشريط الجانبي لفتح صفحة المستخدمين.",
+  },
+  "copilot.guide.users.list.step2.title": {
+    en: "You're on the Users page",
+    ar: "أنت في صفحة المستخدمين",
+  },
+  "copilot.guide.users.list.step2.instruction": {
+    en: "This page lists every person in your company with their role and status.",
+    ar: "تعرض هذه الصفحة كل شخص في شركتك مع دوره وحالته.",
+  },
+  "copilot.guide.users.list.step3.title": {
+    en: "Review the directory",
+    ar: "راجع الدليل",
+  },
+  "copilot.guide.users.list.step3.instruction": {
+    en: "The table shows each member, their department, role, and access status.",
+    ar: "يعرض الجدول كل عضو وقسمه ودوره وحالة الوصول.",
+  },
+  "copilot.guide.users.list.step4.title": {
+    en: "Search the directory",
+    ar: "ابحث في الدليل",
+  },
+  "copilot.guide.users.list.step4.instruction": {
+    en: "Type a name or email in the search box to filter the directory.",
+    ar: "اكتب اسمًا أو بريدًا إلكترونيًا في مربع البحث لتصفية الدليل.",
+  },
+  "copilot.guide.users.list.step5.title": {
+    en: "Filter by role",
+    ar: "صفِّ حسب الدور",
+  },
+  "copilot.guide.users.list.step5.instruction": {
+    en: "Use the role filter to show only admins or only employees.",
+    ar: "استخدم عامل تصفية الدور لعرض المديرين أو الموظفين فقط.",
   },
 
   // ── knowledgeBase.build ────────────────────────────────────────────────────
@@ -661,6 +823,44 @@ export const GUIDE_I18N: Record<string, GuideMessage> = {
     ar: "انقر على «حفظ التغييرات» أسفل الصفحة لتطبيق التحديثات.",
   },
 
+  // ── settings.updateTenant ──────────────────────────────────────────────────
+  "copilot.guide.settings.updateTenant.title": {
+    en: "Update company settings",
+    ar: "تحديث إعدادات الشركة",
+  },
+  "copilot.guide.settings.updateTenant.step1.title": {
+    en: "Open Settings",
+    ar: "افتح الإعدادات",
+  },
+  "copilot.guide.settings.updateTenant.step1.instruction": {
+    en: "Click Settings in the sidebar to open the company settings page.",
+    ar: "انقر على «الإعدادات» في الشريط الجانبي لفتح صفحة إعدادات الشركة.",
+  },
+  "copilot.guide.settings.updateTenant.step2.title": {
+    en: "Review the company profile",
+    ar: "راجع ملف الشركة",
+  },
+  "copilot.guide.settings.updateTenant.step2.instruction": {
+    en: "The company profile holds your company name, logo, and timezone.",
+    ar: "يحتوي ملف الشركة على اسم الشركة وشعارها والمنطقة الزمنية.",
+  },
+  "copilot.guide.settings.updateTenant.step3.title": {
+    en: "Update the company name",
+    ar: "حدّث اسم الشركة",
+  },
+  "copilot.guide.settings.updateTenant.step3.instruction": {
+    en: "Type the new company name in the Company Name field.",
+    ar: "اكتب اسم الشركة الجديد في حقل «اسم الشركة».",
+  },
+  "copilot.guide.settings.updateTenant.step4.title": {
+    en: "Save your changes",
+    ar: "احفظ تغييراتك",
+  },
+  "copilot.guide.settings.updateTenant.step4.instruction": {
+    en: "Click Save changes at the bottom of the page to apply the updates.",
+    ar: "انقر على «حفظ التغييرات» أسفل الصفحة لتطبيق التحديثات.",
+  },
+
   // ── usage.view ─────────────────────────────────────────────────────────────
   "copilot.guide.usage.view.title": {
     en: "View usage and limits",
@@ -681,6 +881,14 @@ export const GUIDE_I18N: Record<string, GuideMessage> = {
   "copilot.guide.usage.view.step2.instruction": {
     en: "Review storage, document, and feature usage against your plan limits.",
     ar: "راجع استخدام التخزين والمستندات والميزات مقارنة بحدود خطتك.",
+  },
+  "copilot.guide.usage.view.step3.title": {
+    en: "Check your quota cards",
+    ar: "اطلع على بطاقات الحصص",
+  },
+  "copilot.guide.usage.view.step3.instruction": {
+    en: "Each card shows how much of a limit you have used and what remains.",
+    ar: "تعرض كل بطاقة مقدار ما استهلكته من الحد وما تبقى منه.",
   },
 
   // ── navigate (generic section navigation) ─────────────────────────────────
@@ -872,6 +1080,76 @@ export const GUIDE_I18N: Record<string, GuideMessage> = {
   "copilot.clarify.roleCreateUnavailable": {
     en: "I can guide you through creating a role, but I can't create roles directly for you yet.",
     ar: "يمكنني أن أرشدك خلال إنشاء الدور، لكن لا أستطيع إنشاء الأدوار مباشرةً لك بعد.",
+  },
+
+  // ── Action results (assistant panel) ──────────────────────────────────────
+  "copilot.action.result.success": {
+    en: "Done.",
+    ar: "تم.",
+  },
+  "copilot.action.result.user.invite": {
+    en: "The invitation has been sent.",
+    ar: "تم إرسال الدعوة.",
+  },
+  "copilot.action.result.user.invite.named": {
+    en: "Invited {name} ({email}) as {role}.",
+    ar: "تمت دعوة {name} ({email}) بدور {role}.",
+  },
+  "copilot.action.result.user.resendInvitation": {
+    en: "The invitation has been resent.",
+    ar: "تمت إعادة إرسال الدعوة.",
+  },
+  "copilot.action.result.user.resendInvitation.named": {
+    en: "Invitation resent to {name} ({email}).",
+    ar: "أُعيد إرسال الدعوة إلى {name} ({email}).",
+  },
+  "copilot.action.result.user.revokeInvitation": {
+    en: "The invitation has been revoked.",
+    ar: "تم إلغاء الدعوة.",
+  },
+  "copilot.action.result.user.delete": {
+    en: "The user has been removed.",
+    ar: "تمت إزالة المستخدم.",
+  },
+  "copilot.action.result.document.search": {
+    en: "Here are the matching documents.",
+    ar: "هذه هي المستندات المطابقة.",
+  },
+  "copilot.action.result.document.get": {
+    en: "Here is the document you asked about.",
+    ar: "إليك المستند الذي سألت عنه.",
+  },
+  "copilot.action.result.document.updateMetadata": {
+    en: "The document metadata has been updated.",
+    ar: "تم تحديث بيانات المستند.",
+  },
+  "copilot.action.result.document.archive": {
+    en: "The document has been archived.",
+    ar: "تم أرشفة المستند.",
+  },
+  "copilot.action.result.document.restore": {
+    en: "The document has been restored.",
+    ar: "تمت استعادة المستند.",
+  },
+  "copilot.action.result.document.softDelete": {
+    en: "The document has been moved to trash.",
+    ar: "تم نقل المستند إلى سلة المهملات.",
+  },
+  "copilot.action.result.document.permanentDelete": {
+    en: "The document has been permanently deleted.",
+    ar: "تم حذف المستند نهائيًا.",
+  },
+  "copilot.action.result.settings.update": {
+    en: "The settings have been updated.",
+    ar: "تم تحديث الإعدادات.",
+  },
+  "copilot.action.result.roles.create": {
+    en: "The role has been created.",
+    ar: "تم إنشاء الدور.",
+  },
+  "copilot.action.result.roles.create.named": {
+    en: "Role \"{name}\" has been created.",
+    ar: "تم إنشاء الدور \"{name}\".",
   },
 };
 

@@ -50,6 +50,7 @@ const arShell: TranslationDictionary = {
   "shell.searchPlaceholder": "ابحث في قاعدة المعرفة...",
   "shell.settings": "الإعدادات",
   "shell.helpCenter": "مركز المساعدة",
+  "shell.navActions": "إجراءات",
   "shell.logout": "تسجيل الخروج",
   "shell.loggingOut": "جارٍ تسجيل الخروج…",
   "shell.enterpriseKnowledge": "معرفة المؤسسة",

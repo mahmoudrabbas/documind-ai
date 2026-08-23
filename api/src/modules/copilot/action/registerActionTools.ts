@@ -17,6 +17,7 @@ import {
   createUserListTool,
 } from "./tools/userTools.js";
 import { createSettingsUpdateTool } from "./tools/settingsTools.js";
+import { createRoleTool } from "./tools/rolesTools.js";
 
 export function registerActionTools(
   toolRegistry: ToolRegistry,
@@ -44,4 +45,7 @@ export function registerActionTools(
 
   // Settings tools
   toolRegistry.register(createSettingsUpdateTool());
+
+  // Role tools
+  toolRegistry.register(createRoleTool());
 }

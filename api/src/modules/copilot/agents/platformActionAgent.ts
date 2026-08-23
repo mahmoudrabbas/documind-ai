@@ -12,7 +12,7 @@ const PLATFORM_ACTION_PROMPT_VERSION = "1.0.0";
 
 const actionAgentInputSchema = z.object({
   mode: z.literal("action"),
-  utterance: z.string().trim().min(1).max(2048),
+  utterance: z.string().trim().max(2048).optional(),
   locale: z.enum(["en", "ar"]).default("en"),
   toolNameHint: z.string().trim().min(1).max(128).optional(),
   toolInput: z.record(z.string(), z.unknown()).optional(),
@@ -60,6 +60,7 @@ const TOOL_RISK_MAP: Record<string, "low" | "reversible" | "destructive"> = {
   "user.revokeInvitation": "reversible",
   "user.delete": "destructive",
   "settings.update": "low",
+  "roles.create": "low",
 };
 
 /**
@@ -75,7 +76,8 @@ export function platformActionToolCatalog(): readonly string[] {
 const TOOL_UNDO_MAP: Record<string, { description: string; toolName?: string } | undefined> = {
   "document.archive": { description: "Restore the document from archive", toolName: "document.restore" },
   "document.restore": { description: "Archive the document again", toolName: "document.archive" },
-  "document.softDelete": { description: "Restore the document from trash", toolName: "document.restore" },
+  // softDelete is NOT reversible: chunks/embeddings are destroyed immediately
+  // with no restore path. Do NOT add an undo entry here.
   "user.invite": { description: "Revoke the invitation", toolName: "user.revokeInvitation" },
   "user.revokeInvitation": { description: "Re-invite the user", toolName: "user.invite" },
   "settings.update": { description: "Revert settings to previous version", toolName: "settings.update" },
@@ -115,7 +117,8 @@ export function createPlatformActionAgent(
         };
       }
 
-      const { utterance, locale, toolNameHint } = parsed.data;
+      const { utterance: rawUtterance, locale, toolNameHint } = parsed.data;
+      const utterance = rawUtterance ?? "";
 
       let toolName: string | undefined = toolNameHint;
       if (!toolName) {
@@ -204,7 +207,7 @@ if (!toolName) {
           mode: "action",
           actionPlan: {
             runId: runContext.runId!,
-            intent: utterance,
+            intent: utterance || `Run ${toolNameStr}`,
             toolName: toolNameStr,
             toolInput: planToolInput,
             risk,
@@ -274,6 +277,7 @@ function buildSummary(toolName: string, risk: "low" | "reversible" | "destructiv
     "user.revokeInvitation": { en: "Revoke a pending invitation", ar: "إلغاء دعوة معلّقة" },
     "user.delete": { en: "Delete a user (irreversible)", ar: "حذف مستخدم (لا يمكن التراجع)" },
     "settings.update": { en: "Update tenant settings", ar: "تحديث إعدادات المؤسسة" },
+    "roles.create": { en: "Create a new custom role", ar: "إنشاء دور مخصص جديد" },
   };
 
   const summary = summaries[toolName] ?? { en: `Execute ${toolName}`, ar: `تنفيذ ${toolName}` };

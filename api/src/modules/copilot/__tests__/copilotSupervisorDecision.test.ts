@@ -24,7 +24,12 @@ import { CopilotClassifier } from "../agents/copilotSupervisor.js";
 import { platformGuideAgent } from "../agents/platformGuideAgent.js";
 import { createPlatformActionAgent } from "../agents/platformActionAgent.js";
 import { registerActionTools } from "../action/registerActionTools.js";
-import { resumeCopilotAction, createActionPlan } from "../copilot.service.js";
+import { resumeCopilotAction, createActionPlan, type CreateActionPlanResult } from "../copilot.service.js";
+
+function actionPlanFrom(result: CreateActionPlanResult) {
+  assert.equal(result.mode, "action", "expected action mode");
+  return result.actionPlan;
+}
 import CopilotActionIdempotencyModel from "../idempotency/actionIdempotency.model.js";
 import { DOCUMENT_ACCESS_ACTIONS } from "../../document-access/documentAccess.actions.js";
 import type { StorageProvider, SecurityScanner, ProcessingDispatcher } from "../../../providers/storage/types.js";
@@ -116,7 +121,7 @@ beforeEach(async () => {
 const fakeStorage: StorageProvider = {
   async saveFile() { throw new Error("not used"); },
   async saveFileFromStream() { throw new Error("not used"); },
-  async deleteFile() { throw new Error("not used"); },
+  async deleteFile() { return; },
   async getFileStream() { return Readable.from([]); },
   async getFileBuffer() { return Buffer.alloc(0); },
   getContentType() { return "application/octet-stream"; },
@@ -627,6 +632,36 @@ test("Copilot supervisor decision routing", async (t) => {
   );
 
   await t.test(
+    "permanentDelete on an active document auto-soft-deletes first and completes",
+    async () => {
+      const documentId = await seedDocument();
+      const { runtime, persistence, toolRegistry } = await buildRuntime();
+
+      const input = baseRunInput("run it");
+      (input.input as Record<string, unknown>).toolName = "document.permanentDelete";
+      (input.input as Record<string, unknown>).toolInput = { documentId };
+      const result = await runtime.execute(input);
+      assert.equal(result.status, "awaiting_approval");
+
+      const approval = [...persistence.approvals.values()][0];
+      assert.ok(approval);
+
+      const run = await resumeCopilotAction(
+        result.runId,
+        { decision: "approve", approvalId: approval.id },
+        approverContext(),
+        { persistence, toolRegistry },
+      );
+
+      assert.equal(run.status, "completed");
+      assert.equal(run.output?.success, true);
+
+      const doc = await DocumentModel.findById(documentId).lean().exec();
+      assert.equal(doc, null, "document must be permanently gone");
+    },
+  );
+
+  await t.test(
     "confirm(reject) fails the run without executing the tool",
     async () => {
       const documentId = await seedDocument();
@@ -715,26 +750,28 @@ test("POST /copilot/action idempotency", async (t) => {
     "a duplicate Idempotency-Key no-ops and replays the original plan/approval",
     async () => {
       const documentId = await seedDocument();
-      const { runtime, persistence } = await buildRuntime();
+      const { runtime, persistence, toolRegistry } = await buildRuntime();
       const context = actionExecutionContext();
       const input = {
         utterance: "delete this document",
         toolName: "document.softDelete",
         toolInput: { documentId },
       };
-      const deps = { runtime, persistence };
+      const deps = { runtime, persistence, toolRegistry };
 
-      const first = await createActionPlan(input, context, {
+      const firstResult = await createActionPlan(input, context, {
         idempotencyKey: "req-delete-1",
         deps,
       });
+      const first = actionPlanFrom(firstResult);
       assert.equal(first.toolName, "document.softDelete");
       assert.ok(first.approvalId, "expected a pending approval id");
 
-      const second = await createActionPlan(input, context, {
+      const secondResult = await createActionPlan(input, context, {
         idempotencyKey: "req-delete-1",
         deps,
       });
+      const second = actionPlanFrom(secondResult);
       assert.equal(second.runId, first.runId);
       assert.equal(second.approvalId, first.approvalId);
       assert.equal(
@@ -758,17 +795,19 @@ test("POST /copilot/action idempotency", async (t) => {
     "requests without an Idempotency-Key always create a fresh run",
     async () => {
       const documentId = await seedDocument();
-      const { runtime, persistence } = await buildRuntime();
+      const { runtime, persistence, toolRegistry } = await buildRuntime();
       const context = actionExecutionContext();
       const input = {
         utterance: "delete this document",
         toolName: "document.softDelete",
         toolInput: { documentId },
       };
-      const deps = { runtime, persistence };
+      const deps = { runtime, persistence, toolRegistry };
 
-      const first = await createActionPlan(input, context, { deps });
-      const second = await createActionPlan(input, context, { deps });
+      const firstResult = await createActionPlan(input, context, { deps });
+      const secondResult = await createActionPlan(input, context, { deps });
+      const first = actionPlanFrom(firstResult);
+      const second = actionPlanFrom(secondResult);
 
       assert.notEqual(first.runId, second.runId);
       assert.notEqual(first.approvalId, second.approvalId);
@@ -787,12 +826,13 @@ test("POST /copilot/action idempotency", async (t) => {
         toolName: "document.softDelete",
         toolInput: { documentId },
       };
-      const deps = { runtime, persistence };
+      const deps = { runtime, persistence, toolRegistry };
 
-      const plan = await createActionPlan(input, context, {
+      const planResult = await createActionPlan(input, context, {
         idempotencyKey: "req-delete-2",
         deps,
       });
+      const plan = actionPlanFrom(planResult);
       assert.ok(plan.approvalId);
 
       await resumeCopilotAction(
@@ -802,10 +842,11 @@ test("POST /copilot/action idempotency", async (t) => {
         { persistence, toolRegistry },
       );
 
-      const replay = await createActionPlan(input, context, {
+      const replayResult = await createActionPlan(input, context, {
         idempotencyKey: "req-delete-2",
         deps,
       });
+      const replay = actionPlanFrom(replayResult);
       assert.equal(replay.runId, plan.runId, "replay must reference the original run");
 
       const doc = await DocumentModel.findById(documentId).lean().exec();
@@ -819,14 +860,14 @@ test("createActionPlan AgentRun lifecycle", async (t) => {
     "the Mongo-persisted AgentRun _id is the runId handed to runtime.execute",
     async () => {
       const documentId = await seedDocument();
-      const { runtime, persistence } = await buildRuntime();
+      const { runtime, persistence, toolRegistry } = await buildRuntime();
       const context = actionExecutionContext();
       const input = {
         utterance: "delete this document",
         toolName: "document.softDelete",
         toolInput: { documentId },
       };
-      const deps = { runtime, persistence };
+      const deps = { runtime, persistence, toolRegistry };
 
       // Capture the runId the runtime actually received. Before the P0 fix,
       // createActionPlan minted its own ObjectId, so the id executed here did
@@ -842,7 +883,8 @@ test("createActionPlan AgentRun lifecycle", async (t) => {
         return originalExecute(runInput, hooks);
       };
 
-      const plan = await createActionPlan(input, context, { deps });
+      const result = await createActionPlan(input, context, { deps });
+      const plan = actionPlanFrom(result);
 
       assert.ok(executedRunId, "runtime.execute must have been called");
       assert.equal(
@@ -862,5 +904,122 @@ test("createActionPlan AgentRun lifecycle", async (t) => {
       // which is exactly the precondition SupervisorRuntime.startRun requires.
       assert.equal(persisted.status, "pending");
     },
+  );
+});
+
+test("bare toolName chip clicks (no utterance)", async (t) => {
+  await t.test(
+    "createActionPlan with only toolName returns an action_input draft when input is incomplete",
+    async () => {
+      const { runtime, persistence, toolRegistry } = await buildRuntime();
+      const context = actionExecutionContext();
+      const input = { toolName: "user.invite" };
+      const deps = { runtime, persistence, toolRegistry };
+
+      const result = await createActionPlan(input, context, { deps });
+      assert.equal(result.mode, "action_input", "expected action_input for incomplete input");
+      assert.ok(result.actionDraft, "expected a draft");
+      assert.equal(result.actionDraft!.toolName, "user.invite");
+      assert.ok(result.actionDraft!.question, "expected a follow-up question");
+    },
+  );
+
+  await t.test(
+    "createActionPlan with complete toolInput for a destructive action returns the plan with fallback intent",
+    async () => {
+      const documentId = await seedDocument();
+      const { runtime, persistence, toolRegistry } = await buildRuntime();
+      const context = actionExecutionContext();
+      const input = {
+        toolName: "document.softDelete",
+        toolInput: { documentId },
+      };
+      const deps = { runtime, persistence, toolRegistry };
+
+      const result = await createActionPlan(input, context, { deps });
+      const plan = actionPlanFrom(result);
+      assert.equal(plan.toolName, "document.softDelete");
+      assert.ok(plan.requiresConfirmation, "destructive action must require confirmation");
+      assert.match(plan.intent, /Run document\.softDelete/, "intent should contain the fallback text");
+    },
+  );
+
+  await t.test(
+    "createActionPlan with only toolName for a destructive action returns action_input draft",
+    async () => {
+      const { runtime, persistence, toolRegistry } = await buildRuntime();
+      const context = actionExecutionContext();
+      const input = { toolName: "document.softDelete" };
+      const deps = { runtime, persistence, toolRegistry };
+
+      const result = await createActionPlan(input, context, { deps });
+      assert.equal(result.mode, "action_input", "destructive bare chip should start with a draft");
+      assert.ok(result.actionDraft, "expected a draft");
+      assert.equal(result.actionDraft!.toolName, "document.softDelete");
+    },
+  );
+});
+
+test("confirmed destructive action surfaces the localized result message", async () => {
+  const documentId = await seedDocument();
+  const { runtime, persistence, toolRegistry } = await buildRuntime();
+  const context = actionExecutionContext();
+  const input = {
+    toolName: "document.softDelete",
+    toolInput: { documentId },
+  };
+  const deps = { runtime, persistence, toolRegistry };
+
+  const result = await createActionPlan(input, context, { deps });
+  const plan = actionPlanFrom(result);
+  assert.ok(plan.requiresConfirmation, "destructive action must require confirmation");
+
+  const approval = [...persistence.approvals.values()][0];
+  assert.ok(approval, "expected a pending approval");
+
+  const run = await resumeCopilotAction(
+    plan.runId,
+    { decision: "approve", approvalId: approval.id, locale: "en" },
+    approverContext(),
+    { persistence, toolRegistry },
+  );
+
+  assert.equal(run.status, "completed");
+  assert.equal(
+    run.resultMessage,
+    "The document has been moved to trash.",
+    "confirmation must carry the localized tool result message",
+  );
+});
+
+test("confirmed destructive action localizes the result message in Arabic", async () => {
+  const documentId = await seedDocument();
+  const { runtime, persistence, toolRegistry } = await buildRuntime();
+  const context = actionExecutionContext();
+  const input = {
+    toolName: "document.softDelete",
+    toolInput: { documentId },
+  };
+  const deps = { runtime, persistence, toolRegistry };
+
+  const result = await createActionPlan(input, context, { deps });
+  const plan = actionPlanFrom(result);
+  assert.ok(plan.requiresConfirmation, "destructive action must require confirmation");
+
+  const approval = [...persistence.approvals.values()][0];
+  assert.ok(approval, "expected a pending approval");
+
+  const run = await resumeCopilotAction(
+    plan.runId,
+    { decision: "approve", approvalId: approval.id, locale: "ar" },
+    approverContext(),
+    { persistence, toolRegistry },
+  );
+
+  assert.equal(run.status, "completed");
+  assert.equal(
+    run.resultMessage,
+    "تم نقل المستند إلى سلة المهملات.",
+    "confirmation must honor the requested locale",
   );
 });

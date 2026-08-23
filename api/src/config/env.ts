@@ -204,7 +204,7 @@ const envSchema = z
 
     GROQ_API_KEY: z.string().default(""),
     GROQ_STT_API_KEY: z.string().default(""),
-    GROQ_CHAT_MODEL: z.string().default("llama-3.3-70b-versatile"),
+    GROQ_CHAT_MODEL: z.string().default("groq/compound-mini"),
     GROQ_VISION_MODEL: z.string().default("qwen/qwen3.6-27b"),
 
     JINA_API_KEY: z.string().default(""),

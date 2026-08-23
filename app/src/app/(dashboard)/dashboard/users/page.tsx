@@ -346,7 +346,7 @@ export default function UsersPage() {
         {successMessage ? <div role="status" className="mb-4 rounded-xl border border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-900">{successMessage}</div> : null}
         {loadingUsers ? <div className="flex items-center justify-center gap-2 py-12 text-sm text-on-surface-variant"><span className="material-symbols-outlined animate-spin">progress_activity</span>{t("dashboard.users.loadingDirectory")}</div> : <>
           <div className="hidden overflow-x-auto rounded-xl border border-outline-variant/30 lg:block">
-            <table className="w-full min-w-[980px] divide-y divide-outline-variant/30 text-start text-sm">
+            <table data-guide-id="users-table" className="w-full min-w-[980px] divide-y divide-outline-variant/30 text-start text-sm">
               <thead className="bg-surface-container-low"><tr>{["user", "department", "role", "status", "verified", "created", "actions"].map((key) => <th key={key} className="px-4 py-3 text-label-sm font-bold uppercase tracking-wider text-on-surface-variant">{t(`dashboard.users.${key}`)}</th>)}</tr></thead>
               <tbody className="divide-y divide-outline-variant/30">{users.map((user) => <tr key={user.id} className="hover:bg-surface-container-low/50">
                 <td className="px-4 py-4"><div className="flex items-center gap-3"><div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-secondary-container font-bold text-on-secondary-container">{user.name.charAt(0).toUpperCase()}</div><div><p className="font-bold text-on-surface">{user.name}</p><p className="text-xs text-on-surface-variant">{user.email}</p></div></div></td>

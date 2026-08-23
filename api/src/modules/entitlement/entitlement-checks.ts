@@ -5,9 +5,45 @@ import {
   OCR_QUOTA_EXCEEDED,
   STORAGE_LIMIT_EXCEEDED,
 } from "../../common/errors/errorCodes.js";
-import { getEntitlementService } from "./entitlement.service.js";
+import { getEntitlementService, type EntitlementService } from "./entitlement.service.js";
+import { buildQuotaExceededError } from "./middlewares/entitlement.middleware.js";
 
 const MB = 1024 * 1024;
+
+/**
+ * Consume one employee seat for a tenant, fail-closed, mirroring the REST
+ * `employeeInviteGuard` semantics for non-HTTP consumers (copilot tools).
+ *
+ * The idempotency key makes repeated attempts for the same run idempotent —
+ * pass a per-run key (e.g. the agent request id).
+ *
+ * @throws AppError 429 ENTITLEMENT_EXCEEDED when the seat quota is exhausted
+ */
+export async function consumeEmployeeSeat(
+  tenantId: string,
+  actorRole: string,
+  idempotencyKey: string,
+  service: EntitlementService = getEntitlementService(),
+): Promise<void> {
+  const entitlementService = service;
+  const result = await entitlementService.consume(tenantId, "employees", 1, idempotencyKey);
+  if (!result.committed) {
+    let periodReset: string | null = null;
+    try {
+      periodReset = await entitlementService.getPeriodReset(tenantId);
+    } catch {
+      // informational only — never fail the denial for it
+    }
+    throw buildQuotaExceededError({
+      dimension: "employees",
+      current: result.current,
+      limit: result.limit,
+      remaining: result.remaining,
+      periodReset,
+      canUpgrade: actorRole === "COMPANY_ADMIN" || actorRole === "SUPER_ADMIN",
+    });
+  }
+}
 
 /**
  * Verify a tenant may upload a file of the given size.

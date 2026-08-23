@@ -1,8 +1,8 @@
 import { AppError } from "../../common/errors/AppError.js";
-import { BAD_REQUEST, NOT_FOUND } from "../../common/errors/errorCodes.js";
+import { BAD_REQUEST, NOT_FOUND, ACTION_DRAFT_NOT_FOUND, ACTION_DRAFT_EXPIRED, ACTION_ANSWER_INVALID } from "../../common/errors/errorCodes.js";
 import type { Request, Response, NextFunction } from "express";
-import { copilotMessageSchema, copilotGuideResolveSchema, copilotActionSchema, copilotActionConfirmSchema } from "./copilot.validator.js";
-import { processCopilotMessage, resolveGuideFlow, createActionPlan, resumeCopilotAction } from "./copilot.service.js";
+import { copilotMessageSchema, copilotGuideResolveSchema, copilotActionSchema, copilotActionConfirmSchema, copilotActionAnswerSchema } from "./copilot.validator.js";
+import { processCopilotMessage, resolveGuideFlow, createActionPlan, resumeCopilotAction, answerCopilotActionDraft, cancelCopilotActionDraft } from "./copilot.service.js";
 import { getRunDetails } from "../agents/agents.service.js";
 import { authorizeTenantOperation } from "../permissions/permissions.operation.js";
 import { Permission } from "../permissions/permissions.catalog.js";
@@ -19,7 +19,7 @@ import type { ChatWorkflowId } from "../agents/chatWorkflow.js";
 import { getPermissionEvaluator } from "../permissions/permissions.evaluator.js";
 import { decidePermission } from "../permissions/permissions.decision.js";
 import type { ResolvedPermissions } from "../permissions/permissions.types.js";
-import { getCopilotToolRegistry, getCopilotSupervisorPersistence } from "./copilotComposition.js";
+import { getCopilotToolRegistry, getCopilotSupervisorPersistence, getCopilotSupervisorRuntime } from "./copilotComposition.js";
 import { ObjectId } from "mongodb";
 import { emitCopilotEvent } from "./socket/copilotSocketEmitter.js";
 
@@ -252,10 +252,148 @@ export async function handleCreateActionPlan(req: Request, res: Response, next: 
 
     const idempotencyKey = req.header("Idempotency-Key")?.trim();
 
-    const actionPlan = await createActionPlan(parseResult.data, executionContext, {
+    const result = await createActionPlan(parseResult.data, executionContext, {
       idempotencyKey: idempotencyKey || undefined,
+      deps: {
+        runtime: getCopilotSupervisorRuntime(),
+        persistence: getCopilotSupervisorPersistence(),
+        toolRegistry: getCopilotToolRegistry(),
+      },
     });
-    res.json({ success: true, data: { actionPlan } });
+    if (result.mode === "action_input") {
+      res.json({ success: true, data: { actionDraft: result.actionDraft } });
+    } else {
+      res.json({
+        success: true,
+        data: {
+          actionPlan: result.actionPlan,
+          ...(result.result ? { result: result.result } : {}),
+        },
+      });
+    }
+  } catch (error) {
+    next(error);
+  }
+}
+
+export async function handleAnswerActionDraft(req: Request, res: Response, next: NextFunction): Promise<void> {
+  try {
+    const authReq = req as AuthenticatedRequest;
+    const parseResult = copilotActionAnswerSchema.safeParse(req.body);
+    if (!parseResult.success) {
+      throw new AppError(400, BAD_REQUEST, "Invalid request body", parseResult.error.issues);
+    }
+
+    const draftId = Array.isArray(req.params.draftId) ? req.params.draftId[0] : req.params.draftId;
+
+    const inputContext: OperationAuthorizationContext = {
+      tenantId: authReq.tenantId,
+      actorId: authReq.auth.userId,
+      actorEmail: authReq.auth.email,
+      actorRole: authReq.auth.role,
+      traceId: authReq.traceId,
+      requestId: authReq.requestId,
+    };
+
+    await authorizeTenantOperation(inputContext, Permission.CHAT_CREATE);
+
+    const executionContext = await buildExecutionContext(authReq, "en");
+
+    let result;
+    try {
+      result = await answerCopilotActionDraft(
+        { draftId, answer: parseResult.data.answer },
+        executionContext,
+      );
+    } catch (execError) {
+      // Draft lifecycle errors (not found / expired / bad answer) should surface
+      // as proper HTTP status codes instead of being swallowed into a synthetic
+      // "completed: true" payload.
+      if (execError instanceof AppError) {
+        const isDraftError =
+          execError.code === ACTION_DRAFT_NOT_FOUND ||
+          execError.code === ACTION_DRAFT_EXPIRED ||
+          execError.code === ACTION_ANSWER_INVALID;
+        if (isDraftError) {
+          throw execError;
+        }
+      }
+
+      // The draft completed but the action execution failed (e.g. role
+      // creation hit a server error). Return a structured failure so the
+      // client can show a proper error card instead of wiping context.
+      const message =
+        execError instanceof AppError
+          ? execError.message
+          : "Action execution failed";
+      const syntheticRunId = new ObjectId().toHexString();
+      result = {
+        completed: true,
+        executionFailed: true,
+        outcome: {
+          plan: {
+            runId: syntheticRunId,
+            intent: "",
+            toolName: "",
+            risk: "low" as const,
+            requiresConfirmation: false,
+            summary: message,
+            target: null,
+          },
+          result: {
+            runId: syntheticRunId,
+            status: "failed" as const,
+            toolName: "",
+            output: null,
+            message,
+          },
+        },
+      };
+    }
+
+    // Live lifecycle events (§15): once the draft is complete and the action
+    // ran, mirror the confirm flow's events so sockets stay consistent.
+    if (result.completed) {
+      const { outcome } = result;
+      if (outcome.result) {
+        emitCopilotEvent(outcome.result.runId, "action.executed", {
+          runId: outcome.result.runId,
+          status: outcome.result.status,
+          result: outcome.result,
+        });
+      }
+      emitCopilotEvent(outcome.plan.runId, "copilot.completed", {
+        runId: outcome.plan.runId,
+        status: outcome.result ? "completed" : "awaiting_approval",
+      });
+    }
+
+    res.json({ success: true, data: result });
+  } catch (error) {
+    next(error);
+  }
+}
+
+export async function handleCancelActionDraft(req: Request, res: Response, next: NextFunction): Promise<void> {
+  try {
+    const authReq = req as AuthenticatedRequest;
+    const draftId = Array.isArray(req.params.draftId) ? req.params.draftId[0] : req.params.draftId;
+
+    const inputContext: OperationAuthorizationContext = {
+      tenantId: authReq.tenantId,
+      actorId: authReq.auth.userId,
+      actorEmail: authReq.auth.email,
+      actorRole: authReq.auth.role,
+      traceId: authReq.traceId,
+      requestId: authReq.requestId,
+    };
+
+    await authorizeTenantOperation(inputContext, Permission.CHAT_READ);
+
+    const executionContext = await buildExecutionContext(authReq, "en");
+    await cancelCopilotActionDraft(draftId, executionContext);
+
+    res.json({ success: true, data: { cancelled: true } });
   } catch (error) {
     next(error);
   }
@@ -283,7 +421,7 @@ export async function handleConfirmAction(req: Request, res: Response, next: Nex
 
     const result = await resumeCopilotAction(
       runId,
-      { decision, approvalId: parseResult.data.approvalId, note },
+      { decision, approvalId: parseResult.data.approvalId, note, locale: parseResult.data.locale },
       inputContext,
       {
         persistence: getCopilotSupervisorPersistence(),

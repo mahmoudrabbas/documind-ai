@@ -17,6 +17,14 @@ import { registerActionTools } from "./action/registerActionTools.js";
 import type { ClassifierDecision } from "./action/action.contracts.js";
 import type { StorageProvider, SecurityScanner, ProcessingDispatcher } from "../../providers/storage/types.js";
 import type { SupervisorPersistence } from "../agents/supervisorPersistence.js";
+import type { SupervisorRuntimeHooks } from "../agents/supervisorRuntime.js";
+import { AppError } from "../../common/errors/AppError.js";
+import { ACTION_NEEDS_INPUT } from "../../common/errors/errorCodes.js";
+import {
+  deterministicExtractToolInput,
+  hasMetadataChange,
+} from "./action/extractActionInput.js";
+import type { ZodError } from "zod";
 
 let supervisorRuntimeInstance: SupervisorRuntime | null = null;
 let copilotToolRegistryInstance: ToolRegistry | null = null;
@@ -41,6 +49,93 @@ export function getCopilotSupervisorPersistence(): SupervisorPersistence {
     throw new Error("Copilot persistence not initialized. Call initializeCopilotRuntime() first.");
   }
   return copilotPersistenceInstance;
+}
+
+/**
+ * Collects the top-level field paths of a zod validation failure. Used to turn
+ * "the tool input is invalid" into the concrete list of fields the interactive
+ * action-input flow should ask for.
+ */
+export function missingFieldsFromIssues(error: ZodError): string[] {
+  const fields = new Set<string>();
+  for (const issue of error.issues) {
+    const key = String(issue.path[0] ?? "input");
+    fields.add(key);
+  }
+  return Array.from(fields);
+}
+
+/**
+ * Per-run supervisor hooks for the copilot runtime (§12/§16). The
+ * `resolveToolInput` hook is the interception point for parameter collection:
+ * it enriches the plan's tool input with values extracted from the utterance
+ * (deterministic first, LLM fallback) and, when required fields are still
+ * missing, aborts the run with ACTION_NEEDS_INPUT so the service can start the
+ * interactive draft flow instead of executing a broken tool call.
+ */
+export function createCopilotRunHooks(
+  toolRegistry: ToolRegistry,
+): SupervisorRuntimeHooks {
+  return {
+    resolveToolInput({ toolName, currentInput, proposedInput }) {
+      const utterance =
+        typeof currentInput.utterance === "string"
+          ? currentInput.utterance
+          : "";
+      const extracted = deterministicExtractToolInput({
+        toolName,
+        utterance,
+      });
+
+      // When the plan already has pre-filled values (e.g. from a completed
+      // draft), only fill in fields the user hasn't provided — don't overwrite
+      // user-provided values with utterance-derived ones.
+      const filtered: Record<string, unknown> = {};
+      for (const [key, value] of Object.entries(extracted)) {
+        if (typeof proposedInput[key] === "undefined" || proposedInput[key] === null || proposedInput[key] === "") {
+          filtered[key] = value;
+        }
+      }
+      const merged = { ...proposedInput, ...filtered };
+
+      const tool = toolRegistry.get(toolName);
+      if (!tool) return merged;
+
+      const parsed = tool.schema.inputSchema.safeParse(merged);
+      if (parsed.success) return merged;
+
+      // document.updateMetadata has no required fields, but executing a plan
+      // that changes nothing is a silent no-op — treat "no change requested"
+      // as incomplete so the user is asked what to change.
+      const missing = missingFieldsFromIssues(parsed.error);
+      if (toolName === "document.updateMetadata" && !hasMetadataChange(merged)) {
+        missing.push("changes");
+      }
+      if (missing.length === 0) return merged;
+
+      throw new AppError(
+        400,
+        ACTION_NEEDS_INPUT,
+        JSON.stringify({ toolName, missing }),
+      );
+    },
+  };
+}
+
+/** Best-effort field map of a tool's input schema (for the LLM extractor). */
+export function schemaFieldMap(
+  toolRegistry: ToolRegistry,
+  toolName: string,
+): Record<string, string> {
+  const tool = toolRegistry.get(toolName);
+  const shape = (tool?.schema.inputSchema as { shape?: Record<string, unknown> })
+    ?.shape;
+  if (!shape) return {};
+  const map: Record<string, string> = {};
+  for (const [key, value] of Object.entries(shape)) {
+    map[key] = value instanceof Object ? "value" : String(value);
+  }
+  return map;
 }
 
 const ZERO_USAGE = { promptTokens: 0, completionTokens: 0, totalTokens: 0 };
@@ -117,8 +212,10 @@ class CopilotSupervisorDecisionModel implements SupervisorDecisionModel {
    * Holds the action plan between the platform-action-agent's tool_call step
    * and its final complete step (the runtime replaces the current input with
    * the tool output in between, so the plan must be retained per run).
+   * Capped at 100 entries with FIFO eviction to prevent unbounded memory growth.
    */
   private readonly planByRunId = new Map<string, Record<string, unknown>>();
+  private static readonly MAX_PLAN_CACHE = 100;
 
   constructor(
     private readonly classifier: CopilotClassifier,
@@ -167,7 +264,13 @@ class CopilotSupervisorDecisionModel implements SupervisorDecisionModel {
       }
 
       const routeContext = (input.routeContext as string | undefined) ?? undefined;
-      const decision = await this.classifier.classify(utterance, locale, routeContext);
+      // Role-aware classification: the classifier filters its tool/flow lists
+      // to the actor's resolved permissions so it never proposes an action the
+      // actor cannot execute (the runtime denies tools by the same set).
+      const decision = await this.classifier.classify(utterance, locale, routeContext, {
+        role: context.actorRole,
+        permissions: [...context.permissions],
+      });
       return classifierToDecision(decision, utterance, locale, routeContext);
     }
 
@@ -221,6 +324,11 @@ class CopilotSupervisorDecisionModel implements SupervisorDecisionModel {
       // SupervisorRuntime executes the tool under its guardrails — including
       // the approval path for destructive operations.
       if (planHasTool) {
+        // Evict oldest entries when cache is at capacity.
+        if (this.planByRunId.size >= CopilotSupervisorDecisionModel.MAX_PLAN_CACHE) {
+          const firstKey = this.planByRunId.keys().next().value;
+          if (firstKey !== undefined) this.planByRunId.delete(firstKey);
+        }
         this.planByRunId.set(runKey, plan);
         return {
           content: JSON.stringify({

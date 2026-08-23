@@ -11,6 +11,7 @@ import {
   listUsers,
 } from "../../../users/users.service.js";
 import { getDocumentAccessAuthorizationService, type DocumentAccessAuthorizationService } from "../../../document-access/documentAccess.authorization.service.js";
+import { consumeEmployeeSeat } from "../../../entitlement/entitlement-checks.js";
 
 function withActorContext<T>(
   handler: (context: AgentRunContext, input: unknown) => Promise<T>
@@ -61,6 +62,10 @@ export function createUserInviteTool(): RegisteredTool {
     handler: withActorContext(async (context: AgentRunContext, input: unknown) => {
       assertNoTrustedContextFields(input, "user.invite");
       const { actorId } = await resolveTrustedActor(context, actorDeps);
+      // Fail-closed employee seat quota, same as the REST invite guard. The
+      // per-run request id is the idempotency key, so a retried run does not
+      // double-consume.
+      await consumeEmployeeSeat(context.tenantId, context.actorRole, context.requestId);
       return inviteUser(input, {
         tenantId: context.tenantId,
         actorId,
@@ -102,6 +107,8 @@ export function createUserResendInvitationTool(): RegisteredTool {
     handler: withActorContext(async (context: AgentRunContext, input: unknown) => {
       assertNoTrustedContextFields(input, "user.resendInvitation");
       const { actorId } = await resolveTrustedActor(context, actorDeps);
+      // Resend consumes a seat like the REST route (a pending user holds one).
+      await consumeEmployeeSeat(context.tenantId, context.actorRole, context.requestId);
       const { targetUserId } = z.object({ targetUserId: z.string() }).parse(input);
       return resendInvitation(
         {

@@ -235,6 +235,19 @@ interface ActionResult {
   toolName: string; output: Record<string,unknown> | null;
   message: string; undo?: { description: string; toolName?: string };
 }
+type ActionQuestionType = "text"|"email"|"enum"|"document"|"user"|"settings";
+interface ActionQuestion {
+  field: string; type: ActionQuestionType;
+  labelKey: string;                    // app i18n key; server label shown verbatim when missing
+  label: string;                       // English fallback label
+  options?: { value: string; label: string }[];
+}
+interface ActionDraft {
+  draftId: string; toolName: string; summary: string;
+  answered: { field: string; value: string }[];   // for the chat transcript
+  question: ActionQuestion | null;                 // single question to answer next
+  questionsRemaining: number;
+}
 ```
 
 ### 7.3 Action tools (v1) — thin wrappers over existing services (`.../action/tools/*.ts`)
@@ -260,6 +273,16 @@ Each tool: strict zod input; `assertNoTrustedContextFields`; resolve trusted act
 ### 7.4 Multi-step actions
 Bulk invite = validate → dedupe → per-recipient `inviteUser` (each already quota+authz+audit gated) → one confirmation for the batch → summary result. Modeled as an action tool that loops the existing service; partial-failure returns per-item status (§14).
 
+### 7.5 Interactive parameter collection (action drafts)
+
+When the LLM proposes a tool whose input is **incomplete**, the run does not fail: the supervisor runtime hooks reject with `AppError(400, ACTION_NEEDS_INPUT, JSON.stringify({ toolName, missing }))` and `processCopilotMessage` opens an **action draft** — the chat panel asks the user for each missing field one at a time (mode `"action_input"`, §16/§17).
+
+- **Extraction is hybrid:** a deterministic extractor (`deterministicExtractToolInput`, sync — the runtime hook is synchronous) parses candidate values out of the *new utterance* (named targets for `document`/`user`/`settings`, enums via option-value match, email patterns, free text). Only when deterministic extraction yields nothing does the draft answer flow fall back to the LLM (`llmExtractToolInput`).
+- **Question catalog** (`getActionInputQuestions(toolName, input, missing)`, `action/extractActionInput.ts`): each tool declares its field order, type (`text|email|enum|document|user|settings`), a `labelKey` (app i18n) + English fallback `label`, and optional `options`. The draft asks exactly one question at a time (stable `questionFields` order, max 10).
+- **Answer loop:** `answerActionDraft(draftId, { answer })` re-extracts the single field, zod-validates the growing `toolInput`, and either returns the next question or `completed:true` with `{ toolName, toolInput, utterance, locale }` → `runCopilotAction` executes (low-risk runs directly; destructive still requires confirmation via the normal plan flow).
+- **`changes` merge:** for `document.updateMetadata`, the extracted metadata patch is merged at the **top level** of `toolInput` (matching the deterministic extractor), not nested under a `changes` key.
+- **Guards:** drafts are scoped `tenantId`+`actorId`, TTL `expiresAt` 15 min, per-question retry budget 3 (`ACTION_ANSWER_INVALID`), and a `DELETE /copilot/action/draft/:draftId` cancel endpoint.
+
 ---
 
 ## 8. Guide Mode vs Action Mode (disambiguation)
@@ -281,7 +304,13 @@ Ambiguity + destructive → clarify is a hard rule enforced in code, independent
 
 ## 9. Visual UX & robustness
 
-Panel: floating launcher (replaces dead "Help Center" `href="#"` in `TopNavBar.tsx`/`app-navigation.tsx`) → slide-in `CopilotPanel` (reuse `Modal`/drawer patterns, `variants.ts`, `cn()`). Modes share the panel; Guide spawns the overlay, Action shows plan/confirmation/result cards.
+Panel: floating launcher (replaces dead "Help Center" `href="#"` in `TopNavBar.tsx`/`app-navigation.tsx`) → slide-in `CopilotPanel` (reuse `Modal`/drawer patterns, `variants.ts`, `cn()`). The panel header contains a **segmented "Guides | Actions" tab switcher** (`menu_book`/`bolt` icons) that is always visible above the panel content. The active tab gates which content is shown:
+
+- **Guides tab** — placeholder ("Tell us what you'd like to do…"), current guide tour/progress, flow catalog cards.
+- **Actions tab** — action chip grid (one per registered tool, localized labels).
+- Mode-specific content (guide session card, action plan card, action result card, draft Q&A card) renders only inside the **matching tab** — a guide session card appears in the Guides tab; an action plan/result appears in the Actions tab.
+- Clarify messages and error banners render **tab-independent** (visible regardless of which tab is selected).
+- Auto-switch: when the runtime sets mode to `guide`, the active tab switches to Guides; when mode becomes `action`/`action_input`, it switches to Actions. Manual tab clicks override auto-switch until the next explicit mode change.
 
 Guide overlay states & handling:
 - **target not found / removed** → `fallback.onMissing` (`skip`|`wait`+re-scan|`stop` with a friendly message).
@@ -331,6 +360,7 @@ Enforced by construction:
 - **Per-tool:** `requiredPermission` re-checked at execution by `evaluatorReauthorize` (real evaluator). Document tools also pass through `authorizeDocumentAction` inside the wrapped service.
 - **Guide steps:** filtered by `requiredPermissions` via evaluator (server) and `can()` (client) — a user is never guided to something they can't do.
 - **Entitlement:** mutating tools inherit the existing entitlement guards inside their services (e.g. upload consumes `documents`/`storageMb`; invite consumes `employees`; token usage charged post-run like `startAgentRun`).
+- **Action drafts:** `POST/DELETE /copilot/action/draft/:draftId` are `CHAT_CREATE`/`CHAT_READ`; the draft is tenant+actor scoped and TTL-expires (15 min), so a user can only answer/cancel their own active draft. Final execution of a completed draft still passes through the full action pipeline (permission re-check + confirmation for destructive).
 
 ---
 
@@ -354,6 +384,9 @@ Enforced by construction:
 | Confirmation timeout | Approval `expiresAt` → auto-reject on resume; run `expired`. |
 | Duplicate action | Idempotency key + run state machine → second attempt no-ops with the first result. |
 | Multi-step partial success | Return per-item status; already-succeeded items are not rolled back; summary lists successes/failures + retry hint. |
+| Incomplete action input | `ACTION_NEEDS_INPUT` → opens an action draft; the panel asks for the missing fields one at a time (§7.5), never silently fails. |
+| Invalid draft answer | Repeated bad answers hit the retry budget (3) → `ACTION_ANSWER_INVALID`; the draft stays active so the user can retry/cancel. |
+| Draft expired / not found | `ACTION_DRAFT_EXPIRED`/`ACTION_DRAFT_NOT_FOUND` → surfaced in-panel; a fresh message re-runs the action. |
 | Socket disconnect | Lifecycle is enhancement-only; final state always fetchable via `GET /copilot/action/:runId`. Frontend falls back to poll. |
 
 Fail-safe default everywhere: on any uncertainty, **do nothing** and explain.
@@ -375,12 +408,14 @@ All under `/copilot`, `authenticate` + `tenantScoping`, permission-gated; zod-va
 
 | Method | Route | Auth / perm | Request | Response | Notes |
 | --- | --- | --- | --- | --- | --- |
-| POST | `/copilot/message` | `CHAT_CREATE` | `{ utterance, locale?, routeContext? }` | `{ mode, guideSession? , actionPlan?, clarify? }` | Runs classify; for guide returns session; for action returns plan (awaiting confirm if destructive). |
+| POST | `/copilot/message` | `CHAT_CREATE` | `{ utterance, locale?, routeContext? }` | `{ mode, guideSession? , actionPlan?, clarify?, result?, actionDraft? }` | Runs classify; for guide returns session; for action returns plan (awaiting confirm if destructive); for incomplete input returns an interactive `actionDraft` (mode `action_input`); low-risk tools may return `result` directly. |
 | GET | `/copilot/guide/flows` | `CHAT_READ` | — | `{ flows: {flowId,title,available}[] }` | Permission-filtered catalog for the launcher. |
 | POST | `/copilot/guide/resolve` | `CHAT_READ` | `{ flowId, params? }` | `{ guideSession }` | Direct flow start (no LLM) — used by "Start guide" buttons. |
-| POST | `/copilot/action` | `CHAT_CREATE` | `{ utterance | {toolName,toolInput}, locale? }` | `{ actionPlan }` | Creates an `agentRun`; destructive ⇒ `requiresConfirmation`. Idempotency-Key header supported. |
+| POST | `/copilot/action` | `CHAT_CREATE` | `{ utterance \| {toolName,toolInput}, locale? }` | `{ actionPlan }` \| `{ actionDraft }` | Creates an `agentRun`; destructive ⇒ `requiresConfirmation`. **Bare chip clicks** send only `{ toolName }` (no utterance) — the backend pre-validates tool input against the zod schema; if required fields are missing, it returns `{ actionDraft }` (mode `action_input`) with an interactive Q&A draft instead of proceeding to the runtime. `actionAgentInputSchema.utterance` is optional (was `min(1)`); plan intent uses fallback `utterance \|\| "Run ${toolName}"`. Idempotency-Key header supported. |
 | POST | `/copilot/action/:runId/confirm` | `CHAT_CREATE` | `{ decision: "approve"|"reject", note? }` | `{ actionResult }` | Maps to existing `resumeAgentRun`. |
 | GET | `/copilot/action/:runId` | `CHAT_READ` | — | `{ run, steps, toolCalls, approvals }` | Reuses `getRunDetails`. |
+| POST | `/copilot/action/draft/:draftId` | `CHAT_CREATE` | `{ answer }` | `{ completed:false, draft }` \| `{ completed:true, outcome }` | Answer the current draft question; final answer returns `{ toolName, toolInput }` + execution outcome (`plan`/`result`). |
+| DELETE | `/copilot/action/draft/:draftId` | `CHAT_READ` | — | `{ cancelled:true }` | Abandons the active draft. |
 | (ws) | `copilot:<runId>` | socket auth | — | lifecycle events | §15. |
 
 Frontend callers: `app/src/services/copilot.service.ts`. Tests: contract tests per endpoint (§20).
@@ -392,6 +427,8 @@ Frontend callers: `app/src/services/copilot.service.ts`. Tests: contract tests p
 **Reuse (no new tables):** `agentRun`/`agentStep`/`agentToolCall`/`agentApproval` persist every action run, tool call, and confirmation (with `contextHash`/`expiresAt`). This is the audit/trace backbone for Action Mode.
 
 **Guide sessions are ephemeral** — generated per request, held client-side; **not persisted** as documents. Rationale: no cross-request server state needed; reduces attack surface and storage.
+
+**Action drafts** are short-lived, tenant+actor-scoped documents in `copilot_action_drafts` (id `draftId`, `toolName`, `questionFields[]`, `answered[]`, `expiresAt` TTL 15 min, `retries`). They are the only new collection; answers are never executed until the draft completes and the full action pipeline runs.
 
 **Analytics (lightweight, optional):** guide funnel (created/step/completed/dropped) and copilot usage via `getAuditWriter().write` with new `AuditAction`s (`COPILOT_GUIDE_STARTED`, `COPILOT_GUIDE_COMPLETED`, `COPILOT_ACTION_PLANNED`, `COPILOT_ACTION_EXECUTED`) and `actorKind:"USER"` + `metadata.source:"copilot"`. No new collection required. (If richer funnel analytics are later needed, add a `copilotEvent` collection — deferred.)
 
@@ -422,13 +459,14 @@ Business-level auditing is **automatic**: each action tool calls a service that 
 - Authorization: each tool denies without permission; scoped grants; wrong role.
 - Tenant isolation: cross-tenant target id ⇒ not-found; injected `tenantId` rejected.
 - Confirmation/idempotency: destructive ⇒ `await_approval`; approve executes once; reject/expire don't; contextHash mismatch rejected; duplicate run no-ops.
+- Action drafts: incomplete input ⇒ `ACTION_NEEDS_INPUT` + draft; answer loop advances questions; enum/email/document-target extraction; retry budget ⇒ `ACTION_ANSWER_INVALID`; tenant+actor scoping + cancel; completed draft auto-executes low-risk tools.
 - Security: prompt-injection payloads can't invoke unregistered tools or pass identity; guardrails deny.
 - Use `FakeModelAdapter` + `InMemorySupervisorPersistence` + fake services (existing patterns).
 
 **Frontend (Vitest node env for logic; Playwright for flows):**
 - Overlay geometry/placement (logical→physical, RTL), target resolution, missing/hidden/disabled handling — as pure logic where possible (`variants.ts`/`routes.ts` test style).
 - Guide provider state machine (next/back/skip/cancel, completion).
-- Action panel: plan render, confirmation dialog, result/undo, error/permission banners.
+- Action panel: plan render, confirmation dialog, result/undo, error/permission banners, interactive action-input draft (transcript bubbles, question card, footer placeholder, cancel).
 - RTL: arrow/tooltip mirroring in Arabic.
 
 **E2E (Playwright, `e2e/`):**
@@ -469,7 +507,7 @@ Ordering optimized for safety-first, testable increments (the runtime already ex
 - **Phase 3 — Runtime composition root + agents.** Build production `SupervisorRuntime` wiring (model/registries/persistence/guardrails); implement `copilot-supervisor` classifier + `platform-guide-agent` + `platform-action-agent` executors; register `guider-v1` workflow. Acceptance: supervised run tests (fake model) for guide/action/clarify.
 - **Phase 4 — Guide backend.** `/copilot/guide/flows`, `/copilot/guide/resolve`, guide branch of `/copilot/message`. Acceptance: permission-filtered sessions, target validation, localization.
 - **Phase 5 — Guide frontend.** `data-guide-id` instrumentation (nav + key buttons/landmarks), `GuideProvider`, portal `GuideOverlay`, RTL, robustness. Acceptance: overlay/E2E guide tests pass.
-- **Phase 6 — Action mode (backend + frontend).** `/copilot/action`, `/copilot/action/:runId/confirm` (→ `resumeAgentRun`), `CopilotPanel` plan/confirm/result UI + `copilot.service.ts`. Acceptance: action E2E incl. confirmation + undo.
+- **Phase 6 — Action mode (backend + frontend).** `/copilot/action`, `/copilot/action/:runId/confirm` (→ `resumeAgentRun`), `CopilotPanel` plan/confirm/result UI + `copilot.service.ts`. Interactive drafts (mode `action_input`, §7.5) included: `ACTION_NEEDS_INPUT` hook, `POST/DELETE /copilot/action/draft/:draftId`, question-card UI. Acceptance: action E2E incl. confirmation + undo + a multi-question draft flow.
 - **Phase 7 — Confirmation/security hardening.** Idempotency keys, contextHash checks, ambiguity→clarify enforcement, guardrail coverage. Acceptance: security tests + eval dataset pass.
 - **Phase 8 — Lifecycle events.** Extend socket.io with `copilot` room; `useCopilotSocket`; REST fallback. Acceptance: live progress works; disconnect degrades gracefully.
 - **Phase 9 — Observability/audit.** Copilot audit actions + `metadata.source`, metrics, funnel. Acceptance: audit rows + metrics present.
@@ -494,6 +532,8 @@ Each phase: objective, exact files (§23), interfaces (above), tests, acceptance
 - `agents/platformActionAgent.ts` — `AgentContract`; proposes tool_call.
 - `guide/guide.contracts.ts`, `guide/guideTargets.ts`, `guide/guideFlows.ts`, `guide/guide.service.ts` (expansion + permission filter + validation).
 - `action/action.contracts.ts`, `action/tools/*.ts` (12 tools), `action/reauthorize.ts` (`evaluatorReauthorize`), `action/registerActionTools.ts`.
+- `action/extractActionInput.ts` — `getActionInputQuestions(toolName, input, missing)`, sync `deterministicExtractToolInput`, `llmExtractToolInput` fallback.
+- `draft/actionDraft.model.ts` (+ TTL index), `draft/actionDraft.service.ts` (create/answer/cancel, `AnswerActionDraftResult` with `utterance`).
 - `copilotComposition.ts` — production composition root: `new SupervisorRuntime({...})` with model, registries, `MongoSupervisorPersistence`, default guardrails.
 - `__tests__/*` — unit/contract/security/eval.
 
@@ -534,7 +574,7 @@ See §22. Dependencies: P1→P2→P3 gate all backend; P4→P5 gate guide; P6→
 ## 25. Migration / configuration requirements
 
 - **DB migrations:** **none.** Reuses existing agent/audit collections; guide sessions ephemeral.
-- **Indexes:** none new (agent/audit indexes suffice).
+- **Indexes:** one TTL index on `copilot_action_drafts.expiresAt` (auto-expires stale drafts); agent/audit indexes suffice otherwise.
 - **Env vars:** `COPILOT_ENABLED` (flag), optional `COPILOT_APPROVAL_TTL_MS`, `COPILOT_MAX_STEPS/TOKENS`. Frontend `NEXT_PUBLIC_COPILOT_ENABLED`. Add to `api/.env.example`, `app/.env.example`.
 - **Feature flag:** yes — ship dark, enable per-env.
 - **API versioning:** none (additive routes).

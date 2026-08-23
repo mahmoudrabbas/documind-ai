@@ -30,7 +30,7 @@ function buildSupportedProvider(key: SupportedProvider): ModelAdapter {
       }
       return new GroqChatAdapter(
         apiKey,
-        process.env.GROQ_CHAT_MODEL || "llama-3.3-70b-versatile",
+        process.env.GROQ_CHAT_MODEL || "groq/compound-mini",
       );
     }
     case "iti-bedrock": {
@@ -193,7 +193,7 @@ function buildLegacyChain(): ModelAdapter {
     adapters.push(
       new GroqChatAdapter(
         process.env.GROQ_API_KEY,
-        process.env.GROQ_CHAT_MODEL || "llama-3.3-70b-versatile",
+        process.env.GROQ_CHAT_MODEL || "groq/compound-mini",
       ),
     );
   }

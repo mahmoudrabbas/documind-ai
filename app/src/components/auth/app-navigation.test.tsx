@@ -37,6 +37,10 @@ const state = vi.hoisted(() => {
       can: (permission: PermissionValue) => permissionSet.has(permission),
     },
     tenantSettings: { status: "idle" },
+    copilot: {
+      setOpen: vi.fn(),
+      openSection: vi.fn(),
+    },
   };
 });
 
@@ -52,7 +56,7 @@ vi.mock("@/providers/tenant-provider", () => ({
   useTenantSettings: () => state.tenantSettings,
 }));
 vi.mock("@/providers/copilot-provider", () => ({
-  useCopilot: () => ({ setOpen: vi.fn() }),
+  useCopilot: () => state.copilot,
 }));
 
 import { AppNavigation } from "./app-navigation";
@@ -230,6 +234,160 @@ describe("responsive navigation", () => {
     );
     expect(documentsLink).toHaveAttribute("title", "Documents");
     expect(documentsLink).toHaveAttribute("aria-label", "Documents");
+  });
+});
+
+describe("nav action buttons", () => {
+  function rowActionButton(href: string): HTMLElement | null {
+    const nav = screen.getByRole("navigation");
+    const link = within(nav)
+      .getAllByRole("link")
+      .find((entry) => entry.getAttribute("href") === href);
+    expect(link, href).toBeTruthy();
+    return link!.closest("div")?.querySelector(
+      '[data-testid="nav-action-button"]',
+    ) as HTMLElement | null;
+  }
+
+  it("renders an Actions button for sections with matching quick guides", () => {
+    grantAllPermissions();
+    renderNav();
+
+    for (const href of [
+      "/dashboard/documents",
+      "/dashboard/users",
+      "/dashboard/settings",
+      "/dashboard/settings/billing",
+      "/dashboard/settings/document-taxonomy",
+      "/company/usage",
+      "/dashboard/roles",
+    ]) {
+      expect(rowActionButton(href), href).not.toBeNull();
+    }
+  });
+
+  it("hides the Actions button for sections without matching guides", () => {
+    grantAllPermissions();
+    renderNav();
+
+    for (const href of [
+      "/dashboard",
+      "/dashboard/audit",
+      "/dashboard/emails",
+      "/dashboard/chat",
+      "/dashboard/knowledge-gaps",
+      "/dashboard/analytics",
+      "/dashboard/processing-failed",
+    ]) {
+      expect(rowActionButton(href), href).toBeNull();
+    }
+  });
+
+  it("opens the copilot panel with the section's action chips", () => {
+    grantAllPermissions();
+    const onClose = renderNav();
+
+    act(() => {
+      rowActionButton("/dashboard/documents")?.click();
+    });
+    expect(state.copilot.openSection).toHaveBeenCalledWith({
+      tools: [
+        "document.search",
+        "document.get",
+        "document.updateMetadata",
+        "document.archive",
+        "document.restore",
+        "document.softDelete",
+        "document.permanentDelete",
+      ],
+      flows: [],
+    });
+    expect(onClose).toHaveBeenCalled();
+
+    act(() => {
+      rowActionButton("/dashboard/users")?.click();
+    });
+    expect(state.copilot.openSection).toHaveBeenCalledWith({
+      tools: [
+        "user.invite",
+        "user.list",
+        "user.resendInvitation",
+        "user.revokeInvitation",
+        "user.delete",
+      ],
+      flows: [],
+    });
+  });
+
+  it("opens the copilot panel with the section's guide-flow chips", () => {
+    grantAllPermissions();
+    renderNav();
+
+    act(() => {
+      rowActionButton("/dashboard/roles")?.click();
+    });
+    expect(state.copilot.openSection).toHaveBeenCalledWith({
+      tools: ["roles.create"],
+      flows: ["roles.create"],
+    });
+
+    act(() => {
+      rowActionButton("/dashboard/settings/billing")?.click();
+    });
+    expect(state.copilot.openSection).toHaveBeenCalledWith({
+      tools: [],
+      flows: ["billing.open"],
+    });
+
+    act(() => {
+      rowActionButton("/dashboard/settings")?.click();
+    });
+    expect(state.copilot.openSection).toHaveBeenCalledWith({
+      tools: ["settings.update"],
+      flows: ["settings.open"],
+    });
+  });
+
+  it("gates the section chips through effective permissions", () => {
+    grantOnly(
+      Permission.DOCUMENTS_READ,
+      Permission.USERS_READ,
+      Permission.ROLES_READ,
+      Permission.ROLES_CREATE,
+    );
+    renderNav();
+
+    act(() => {
+      rowActionButton("/dashboard/documents")?.click();
+    });
+    expect(state.copilot.openSection).toHaveBeenCalledWith({
+      tools: ["document.search", "document.get"],
+      flows: [],
+    });
+
+    // Only read is granted — nothing destructive or updatable is offered.
+    act(() => {
+      rowActionButton("/dashboard/users")?.click();
+    });
+    expect(state.copilot.openSection).toHaveBeenCalledWith({
+      tools: ["user.list"],
+      flows: [],
+    });
+
+    act(() => {
+      rowActionButton("/dashboard/roles")?.click();
+    });
+    expect(state.copilot.openSection).toHaveBeenCalledWith({
+      tools: ["roles.create"],
+      flows: ["roles.create"],
+    });
+  });
+
+  it("hides the Actions button when none of the section's guides are permitted", () => {
+    // ROLES_READ shows the Roles section but ROLES_CREATE is missing.
+    grantOnly(Permission.ROLES_READ);
+    renderNav();
+    expect(rowActionButton("/dashboard/roles")).toBeNull();
   });
 });
 

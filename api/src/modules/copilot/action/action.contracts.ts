@@ -60,6 +60,68 @@ export const actionResultSchema = z.object({
     .optional(),
 });
 
+export type ActionQuestionType =
+  | "text"
+  | "email"
+  | "enum"
+  | "document"
+  | "user"
+  | "settings"
+  | "grants";
+
+export interface ActionQuestion {
+  field: string;
+  type: ActionQuestionType;
+  labelKey: string;
+  /** Shown verbatim when no localized label exists for `labelKey`. */
+  label: string;
+  options?: { value: string; label: string }[];
+}
+
+export interface ActionDraft {
+  draftId: string;
+  toolName: string;
+  summary: string;
+  /** Fields the user already provided (for the transcript). */
+  answered: { field: string; value: string }[];
+  /** The single question to answer next, or null when all fields are present. */
+  question: ActionQuestion | null;
+  questionsRemaining: number;
+  /** Feedback for the last answer when it could not be used (e.g. no matching
+   * document). Absent when the last answer was accepted. */
+  message?: string | null;
+}
+
+export const actionQuestionSchema = z.object({
+  field: z.string().trim().min(1).max(64),
+  type: z.enum(["text", "email", "enum", "document", "user", "settings", "grants"]),
+  labelKey: z.string().trim().min(1).max(256),
+  label: z.string().trim().min(1).max(256),
+  options: z
+    .array(
+      z.object({
+        value: z.string().trim().min(1).max(128),
+        label: z.string().trim().min(1).max(256),
+      }),
+    )
+    .optional(),
+});
+
+export const actionDraftSchema = z.object({
+  draftId: z.string().trim().min(1).max(64),
+  toolName: z.string().trim().min(1).max(128),
+  summary: z.string().trim().min(1).max(512),
+  answered: z.array(
+    z.object({
+      field: z.string().trim().min(1).max(64),
+      value: z.string().trim().min(1).max(512),
+    }),
+  ),
+  question: actionQuestionSchema.nullable(),
+  questionsRemaining: z.number().int().min(0),
+  message: z.string().trim().min(1).max(512).nullable().optional(),
+});
+
 export interface ClassifierDecision {
   mode: "guide" | "action" | "clarify";
   confidence: number;

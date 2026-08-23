@@ -19,8 +19,7 @@ export type ActionPhase =
   | "executing"
   | "succeeded"
   | "failed"
-  | "rejected"
-  | "expired";
+  | "rejected";
 
 export interface ActionLifecycleState {
   phase: ActionPhase;
@@ -63,7 +62,7 @@ export function actionLifecycleReducer(
       return {
         ...state,
         phase: "awaiting_confirmation",
-        approvalId: payload.approvalId,
+        approvalId: payload.approvalId ?? state.approvalId,
         runId: payload.runId,
       };
 

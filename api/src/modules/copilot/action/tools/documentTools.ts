@@ -1,4 +1,6 @@
 import { z } from "zod";
+import { AppError } from "../../../../common/errors/AppError.js";
+import { DOCUMENT_NOT_SOFT_DELETED } from "../../../../common/errors/errorCodes.js";
 import { Permission } from "../../../permissions/permissions.catalog.js";
 import type { RegisteredTool, ToolSchema, RunContext } from "../../../agents/agents.types.js";
 import type { AgentRunContext } from "../../../agents/agentRunContext.js";
@@ -357,11 +359,30 @@ export function createDocumentPermanentDeleteTool(deps: {
       assertNoTrustedContextFields(input, "document.permanentDelete");
       const { actorId } = await resolveTrustedActor(context, actorDeps);
       const { documentId } = z.object({ documentId: z.string() }).parse(input);
-      await service.permanentDeleteDocument(documentId, context.tenantId, {
+      const actor = {
         userId: actorId,
         email: context.actorEmail ?? "",
         role: context.actorRole,
-      });
+      };
+      try {
+        await service.permanentDeleteDocument(documentId, context.tenantId, actor);
+      } catch (caught) {
+        // Active documents are not in the trash yet: move them there first so
+        // the irreversible deletion is a single confirmed flow.
+        if (
+          caught instanceof AppError &&
+          caught.code === DOCUMENT_NOT_SOFT_DELETED
+        ) {
+          await service.softDeleteDocument(documentId, context.tenantId, actor);
+          await service.permanentDeleteDocument(
+            documentId,
+            context.tenantId,
+            actor,
+          );
+        } else {
+          throw caught;
+        }
+      }
       return { success: true, message: "Document permanently deleted" };
     }),
   };

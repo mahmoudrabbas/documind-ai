@@ -135,7 +135,6 @@ test("CopilotClassifier routes plain requests for covered subjects to guide flow
   const cases: Array<{ utterance: string; flowId: string }> = [
     { utterance: "upload a document", flowId: "documents.upload" },
     { utterance: "add a document", flowId: "documents.upload" },
-    { utterance: "search documents", flowId: "documents.search" },
     { utterance: "create a knowledge base", flowId: "knowledgeBase.build" },
     { utterance: "build a knowledge base", flowId: "knowledgeBase.build" },
     { utterance: "رفع مستند", flowId: "documents.upload" },
@@ -191,13 +190,28 @@ test("CopilotClassifier routes plain requests for covered subjects to guide flow
       assert.equal(decision.toolNameHint, "user.invite");
     },
   );
+
+  await t.test(
+    "search intent is an action since document.search exists",
+    async () => {
+      const classifier = new CopilotClassifier(
+        new StubClassifierAdapter(CLARIFY_JSON),
+      );
+      const decision = await classifier.classify(
+        "search documents about remote work",
+        "en",
+      );
+      assert.equal(decision.mode, "action");
+      assert.equal(decision.toolNameHint, "document.search");
+    },
+  );
 });
 
-test("no action tool exists for role creation — the classifier never invents one", () => {
+test("role creation has exactly one real action tool — the classifier never invents others", () => {
   const roleTools = platformActionToolCatalog().filter((name) =>
     name.startsWith("role"),
   );
-  assert.deepEqual(roleTools, []);
+  assert.deepEqual(roleTools, ["roles.create"]);
 });
 
 test("CopilotClassifier routes role creation to the roles.create guide", async (t) => {

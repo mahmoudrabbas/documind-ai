@@ -30,6 +30,7 @@ import { resolveCorsOrigin } from "../../../common/cors/corsOrigins.js";
 import { verifyJwt } from "../../auth/jwtTokens.js";
 import { requireActiveTenantAccess } from "../../../common/auth/tenantAccess.js";
 import type { AuthTokenClaims } from "../../auth/auth.types.js";
+import AgentRunModel from "../../../db/models/agentRun.model.js";
 
 export interface NotificationSocketServerHandle {
   emitToUser(
@@ -256,8 +257,40 @@ export function createSocketServer(
           ack?.(false);
           return;
         }
-        socket.join(copilotRoom(runId));
-        ack?.(true);
+
+        const cacheKey = `copilot_run_${runId}`;
+        const cached = socket.data[cacheKey] as boolean | undefined;
+        if (cached === false) {
+          ack?.(false);
+          return;
+        }
+        if (cached === true) {
+          socket.join(copilotRoom(runId));
+          ack?.(true);
+          return;
+        }
+
+        AgentRunModel.findOne({ _id: runId })
+          .select({ tenantId: 1, actorId: 1 })
+          .lean()
+          .exec()
+          .then((run) => {
+            if (
+              !run ||
+              run.tenantId.toString() !== socket.data.tenantId ||
+              run.actorId.toString() !== socket.data.userId
+            ) {
+              socket.data[cacheKey] = false;
+              ack?.(false);
+              return;
+            }
+            socket.data[cacheKey] = true;
+            socket.join(copilotRoom(runId));
+            ack?.(true);
+          })
+          .catch(() => {
+            ack?.(false);
+          });
       });
       socket.on("copilot:leave", (input: unknown, ack?: (ok: boolean) => void) => {
         const runId = isRecord(input) ? input.runId : undefined;

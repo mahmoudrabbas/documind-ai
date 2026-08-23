@@ -181,6 +181,11 @@ export function assertNoTrustedContextFields(
 ): void {
   if (input === null || typeof input !== "object") return;
   for (const field of TRUSTED_CONTEXT_FIELDS) {
+    // roles.create legitimately carries a "baseRole" input field (the base
+    // role the new custom role builds on). The domain service authorizes the
+    // actor and validates the value itself, so this field is exempt for that
+    // tool only.
+    if (field === "baseRole" && toolName === "roles.create") continue;
     if (
       Object.prototype.hasOwnProperty.call(input, field) &&
       (input as Record<string, unknown>)[field] !== undefined

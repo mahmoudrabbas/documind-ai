@@ -72,6 +72,7 @@ export default function DocumentsPage() {
     archive,
     restore,
     replace,
+    updateMetadata,
     goToPage,
     openDrawer,
     closeDrawer,
@@ -621,6 +622,7 @@ export default function DocumentsPage() {
           onSoftDelete={remove}
           onPermanentDelete={permanentDelete}
           onReplace={replace}
+          onUpdateMetadata={updateMetadata}
           versions={versions}
           isLoadingVersions={isLoadingVersions}
           highlightPage={highlightPage}

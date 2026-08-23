@@ -5,7 +5,9 @@
 
 import { apiClient, ApiError } from "@/lib/api-client";
 import type {
+  ActionDraft,
   ActionPlan,
+  ActionResult,
   ClarifyPayload,
   CopilotMessageResult,
   GuideFlowMeta,
@@ -101,23 +103,41 @@ export interface CreateActionPlanInput {
   locale?: "en" | "ar";
 }
 
-/** POST /copilot/action — propose (and for destructive tools, hold) an action. */
+/** POST /copilot/action — propose (and for destructive tools, hold) an action.
+ *  When the action needs missing parameters the endpoint returns a draft
+ *  instead of a plan (mirrors the `/copilot/message` action_input path but
+ *  is deterministic — no LLM classifier involved). */
+export type CreateActionPlanResult =
+  | { mode: "action"; actionPlan: ActionPlan; result?: ActionResult }
+  | { mode: "action_input"; actionDraft: ActionDraft };
+
 export async function createActionPlan(
   input: CreateActionPlanInput,
-): Promise<ActionPlan> {
-  const response = await apiClient<Envelope<{ actionPlan: ActionPlan }>>(
-    "/copilot/action",
-    {
-      method: "POST",
-      body: {
-        ...(input.utterance ? { utterance: input.utterance } : {}),
-        ...(input.toolName ? { toolName: input.toolName } : {}),
-        ...(input.toolInput ? { toolInput: input.toolInput } : {}),
-        locale: input.locale ?? "en",
-      },
+): Promise<CreateActionPlanResult> {
+  const response = await apiClient<
+    Envelope<{
+      actionPlan?: ActionPlan;
+      actionDraft?: ActionDraft;
+      result?: ActionResult;
+    }>
+  >("/copilot/action", {
+    method: "POST",
+    body: {
+      ...(input.utterance ? { utterance: input.utterance } : {}),
+      ...(input.toolName ? { toolName: input.toolName } : {}),
+      ...(input.toolInput ? { toolInput: input.toolInput } : {}),
+      locale: input.locale ?? "en",
     },
-  );
-  return response.data.actionPlan;
+  });
+
+  if (response.data.actionDraft) {
+    return { mode: "action_input", actionDraft: response.data.actionDraft };
+  }
+  return {
+    mode: "action",
+    actionPlan: response.data.actionPlan!,
+    ...(response.data.result ? { result: response.data.result } : {}),
+  };
 }
 
 export interface ConfirmActionInput {
@@ -125,17 +145,25 @@ export interface ConfirmActionInput {
   decision: "approve" | "reject";
   approvalId: string;
   note?: string;
+  locale?: "en" | "ar";
 }
 
 /**
  * POST /copilot/action/:runId/confirm — approve or reject a held action. The
  * response run status is authoritative; socket lifecycle events are
- * enhancement-only.
+ * enhancement-only. `resultMessage` (when present) is the localized
+ * confirmation text computed by the server for the executed tool.
  */
+export interface ConfirmActionRun {
+  status: string;
+  error?: { code?: string; message?: string } | null;
+  resultMessage?: string;
+}
+
 export async function confirmAction(
   input: ConfirmActionInput,
-): Promise<{ status: string; run: { status: string } }> {
-  const response = await apiClient<Envelope<{ run: { status: string } }>>(
+): Promise<{ status: string; run: ConfirmActionRun }> {
+  const response = await apiClient<Envelope<{ run: ConfirmActionRun }>>(
     `/copilot/action/${encodeURIComponent(input.runId)}/confirm`,
     {
       method: "POST",
@@ -143,6 +171,7 @@ export async function confirmAction(
         decision: input.decision,
         approvalId: input.approvalId,
         ...(input.note ? { note: input.note } : {}),
+        ...(input.locale ? { locale: input.locale } : {}),
       },
     },
   );
@@ -163,6 +192,42 @@ export async function getActionStatus(
     { method: "GET" },
   );
   return response.data;
+}
+
+export type ActionDraftAnswerResult =
+  | { completed: false; draft: ActionDraft }
+  | {
+      completed: true;
+      outcome: {
+        plan: ActionPlan;
+        approvalId?: string;
+        result?: ActionResult;
+      };
+    };
+
+/**
+ * POST /copilot/action/draft/:draftId — answer the draft's current question.
+ * When the draft completes, the action runs end-to-end: destructive actions
+ * return a plan (approval pending), low-risk actions execute and return a
+ * result.
+ */
+export async function answerActionDraft(
+  draftId: string,
+  answer: string,
+): Promise<ActionDraftAnswerResult> {
+  const response = await apiClient<Envelope<ActionDraftAnswerResult>>(
+    `/copilot/action/draft/${encodeURIComponent(draftId)}`,
+    { method: "POST", body: { answer } },
+  );
+  return response.data;
+}
+
+/** DELETE /copilot/action/draft/:draftId — abandon the interactive draft. */
+export async function cancelActionDraft(draftId: string): Promise<void> {
+  await apiClient<Envelope<{ cancelled: boolean }>>(
+    `/copilot/action/draft/${encodeURIComponent(draftId)}`,
+    { method: "DELETE" },
+  );
 }
 
 export type { ClarifyPayload };

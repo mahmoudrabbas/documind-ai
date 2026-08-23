@@ -8,6 +8,7 @@ import type { DocumentAccessAuthorizationService } from "../../../modules/docume
 import type { LoadedChunkCandidate } from "./authorizedRetrievalTools.js";
 import { ToolRegistry } from "../toolRegistry.js";
 import {
+  assertNoTrustedContextFields,
   createAuthorizedRetrievalTools,
   registerAuthorizedRetrievalTools,
   type AuthorizedRetrievalDependencies,
@@ -431,6 +432,24 @@ describe("authorizedRetrievalTools — agent context requirement", () => {
     })) as { candidates: unknown[]; totalCandidates: number };
     assert.equal(result.totalCandidates, 1);
     assert.ok(Array.isArray(result.candidates));
+  });
+
+  test("roles.create may carry a baseRole input field (domain-exempt)", () => {
+    // baseRole is a legitimate roles.create input (the base role the new
+    // custom role builds on); the trusted-context guard must not reject it
+    // for that tool, while still rejecting it everywhere else.
+    assertNoTrustedContextFields({ name: "HR Manager", baseRole: "EMPLOYEE" }, "roles.create");
+  });
+
+  test("baseRole stays a trusted-context field for every other tool", () => {
+    assert.throws(
+      () =>
+        assertNoTrustedContextFields(
+          { queryText: "hello", baseRole: "COMPANY_ADMIN" },
+          "authorized_hybrid_search",
+        ),
+      (err: unknown) => err instanceof Error && err.message.includes("baseRole"),
+    );
   });
 });
 
