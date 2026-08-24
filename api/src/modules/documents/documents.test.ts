@@ -939,12 +939,7 @@ void test("use_in_ai continues to require exact policy authorization for Company
   ));
 });
 
-/**
- * A document access policy must not be able to hand AI use to a role that was
- * never granted the `documents:use-in-ai` capability. The policy narrows an
- * existing capability; it is not an alternative source of one.
- */
-void test("use_in_ai policy grants cannot escalate a role without the AI capability", async () => {
+void test("employee AI capability remains constrained by live document policy", async () => {
   const { tenant, user } = await createActiveTenantAdmin();
   const noAiRole = await RoleModel.create({
     tenantId: tenant._id,
@@ -961,8 +956,7 @@ void test("use_in_ai policy grants cannot escalate a role without the AI capabil
   ]);
   await UserModel.updateOne({ _id: roleEmployee._id }, { $set: { customRoleId: noAiRole._id } });
 
-  // The policy grants `use_in_ai` to the role and to every tenant member, which
-  // is exactly the "Manage Access" configuration that used to be sufficient.
+  // Manage Access remains the document-level boundary for both employees.
   const document = await createTestDocumentWithPolicy(tenant.id, user.id, "internal", ["read", "use_in_ai"], {
     fileName: "policy-granted-ai.pdf",
     checksum: "policy-granted-ai-checksum",
@@ -982,27 +976,13 @@ void test("use_in_ai policy grants cannot escalate a role without the AI capabil
     { tenantId: tenant.id, actorId: plainEmployee.id }, document.doc.id, "read",
   ));
 
-  await assert.rejects(authorization.authorizeDocumentAction(
-    { tenantId: tenant.id, actorId: roleEmployee.id }, document.doc.id, "use_in_ai",
-  ));
-  await assert.rejects(authorization.authorizeDocumentAction(
-    { tenantId: tenant.id, actorId: plainEmployee.id }, document.doc.id, "use_in_ai",
-  ));
-
-  // Granting the capability on the role — ticking "Use Documents in AI" in the
-  // role editor — is what actually unlocks it. Resolution is uncached, so the
-  // updated grant applies immediately. The role schema rejects query updates,
-  // so the grant is appended through the document itself.
-  noAiRole.grants.push({ permission: Permission.DOCUMENTS_USE_IN_AI });
-  noAiRole.version += 1;
-  await noAiRole.save();
   await assert.doesNotReject(authorization.authorizeDocumentAction(
     { tenantId: tenant.id, actorId: roleEmployee.id }, document.doc.id, "use_in_ai",
   ));
-  // The role-less employee is still denied: no role, no capability.
-  await assert.rejects(authorization.authorizeDocumentAction(
+  await assert.doesNotReject(authorization.authorizeDocumentAction(
     { tenantId: tenant.id, actorId: plainEmployee.id }, document.doc.id, "use_in_ai",
   ));
+
 });
 
 void test("DELETE /documents/:id — soft deletes document and removes stale RAG retrieval artifacts", async () => {

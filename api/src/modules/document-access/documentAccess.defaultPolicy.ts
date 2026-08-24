@@ -27,12 +27,22 @@ export function createDefaultDocumentAccessPolicy(
     effectiveFrom: input.createdAt,
     effectiveUntil: null,
     inherits: null,
-    rules: [{
-      ruleId: "default-owner-minimum",
-      effect: "allow",
-      subject: { type: "owner" },
-      actions: [...DOCUMENT_ACCESS_ACTIONS],
-    }],
+    rules: [
+      {
+        ruleId: "default-owner-minimum",
+        effect: "allow",
+        subject: { type: "owner" },
+        actions: [...DOCUMENT_ACCESS_ACTIONS],
+      },
+      ...(input.departmentId
+        ? [{
+            ruleId: `default-department-${input.departmentId}`,
+            effect: "allow" as const,
+            subject: { type: "department" as const, id: input.departmentId },
+            actions: ["discover", "read", "download", "use_in_ai"] as const,
+          }]
+        : []),
+    ],
     provenance: {
       createdBy: input.ownerId,
       createdAt: input.createdAt,

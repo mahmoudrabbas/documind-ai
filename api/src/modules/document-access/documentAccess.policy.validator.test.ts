@@ -133,6 +133,29 @@ test("default policy is deterministic, deeply frozen, and owner-only", () => {
   assert.equal(first.rules.some((rule) => rule.subject.type === "tenant_member"), false);
 });
 
+test("default policy grants an assigned department discover, read, download, and AI use", () => {
+  const policy = createDefaultDocumentAccessPolicy({
+    tenantId,
+    documentId,
+    policyId,
+    ownerId: actorId,
+    classificationId,
+    departmentId: "64a000000000000000000005",
+    createdAt: "2026-07-22T10:00:00.000Z",
+  });
+  assert.deepEqual(policy.rules, [{
+      ruleId: "default-department-64a000000000000000000005",
+      effect: "allow",
+      subject: { type: "department", id: "64a000000000000000000005" },
+      actions: ["discover", "read", "download", "use_in_ai"],
+    }, {
+      ruleId: "default-owner-minimum",
+      effect: "allow",
+      subject: { type: "owner" },
+      actions: [...DOCUMENT_ACCESS_ACTIONS],
+    }]);
+});
+
 test("default policy fails closed when restricted classification context is missing", () => {
   assert.throws(
     () => createDefaultDocumentAccessPolicy({

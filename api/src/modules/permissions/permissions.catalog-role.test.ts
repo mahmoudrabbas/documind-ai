@@ -64,6 +64,12 @@ test("employee base role can read knowledge gaps", () => {
   );
 });
 
+test("employee base role can view, download, and use department-authorized documents in AI", () => {
+  assert.ok(BASE_ROLE_DEFAULTS.EMPLOYEE.includes(Permission.DOCUMENTS_READ));
+  assert.ok(BASE_ROLE_DEFAULTS.EMPLOYEE.includes(Permission.DOCUMENTS_DOWNLOAD));
+  assert.ok(BASE_ROLE_DEFAULTS.EMPLOYEE.includes(Permission.DOCUMENTS_USE_IN_AI));
+});
+
 test("catalog identifiers are normalized, unique, versioned, and cover all twelve groups", () => {
   const ids = PERMISSION_CATALOG.map((item) => item.id);
   assert.equal(new Set(ids).size, ids.length);

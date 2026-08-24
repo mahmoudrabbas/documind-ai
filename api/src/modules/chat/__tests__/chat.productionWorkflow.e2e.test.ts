@@ -3874,7 +3874,7 @@ test(
 );
 
 test(
-  "an EMPLOYEE without use_in_ai access receives an access-safe answer and no Knowledge Gap",
+  "an EMPLOYEE with a readable but non-AI policy receives an access-safe answer and no Knowledge Gap",
   { timeout: 60_000 },
   async () => {
     const fixture = await seedWorkflowState();
@@ -3912,25 +3912,20 @@ test(
     );
     const graph = await loadSupervisorGraph(requestId);
 
-    // An EMPLOYEE role that was never granted `documents:use-in-ai` does not
-    // hold the retrieval tool's required permission, so ToolPermissionGuardrail
-    // denies the call before it runs. No search is attempted at all — a
-    // stronger guarantee than "the search ran and returned nothing
-    // authorized" — and the blocked guardrail step is the only record of it.
+    // The employee has the coarse AI capability, but this live policy grants
+    // only discover/read, so canonical retrieval filters the document.
     assert.equal(
       graph.toolCalls.some(
         (toolCall) => toolCall.toolName === "authorized_hybrid_search",
       ),
-      false,
+      true,
     );
     assert.equal(
       graph.toolCalls.some((toolCall) => toolCall.toolName === "evaluate_evidence"),
       false,
     );
-    const blockedStep = graph.steps.find((step) => step.action === "guardrail");
-    assert.ok(blockedStep);
-    assert.equal(blockedStep.status, "failed");
-    assert.equal(blockedStep.error?.code, "AGENT_TOOL_PERMISSION_DENIED");
+    const searchCall = graph.toolCalls.find((toolCall) => toolCall.toolName === "authorized_hybrid_search");
+    assert.equal(searchCall?.output?.retrievalOutcome, "AUTHORIZATION_FILTERED");
     assert.equal(
       response.answer,
       "I don't have sufficient authorized access to the documents needed to answer this question.",

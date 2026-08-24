@@ -31,3 +31,19 @@ test("upload commits Restricted document, version, private policy, and pointer a
   const policy = await DocumentAccessPolicyModel.findOne({ tenantId, documentId: document._id }).lean().exec();
   assert.deepEqual(policy?.rules, [{ ruleId: "default-owner-minimum", effect: "allow", subject: { type: "owner" }, actions: [...DOCUMENT_ACCESS_ACTIONS] }]);
 });
+
+test("upload with a department creates a department access rule", async (context) => {
+  if (blocked) { context.skip(blocked); return; }
+  const tenantId = new mongoose.Types.ObjectId();
+  const departmentId = new mongoose.Types.ObjectId();
+  const user = await UserModel.create({ tenantId, name: "Department Uploader", email: "department-uploader@example.test", passwordHash: "hash", role: "COMPANY_ADMIN", status: "active", emailVerified: true });
+  const document = await createDocumentWithPrivatePolicy({ tenantId, fileName: "department.pdf", originalFileName: "department.pdf", fileSize: 1,
+    mimeType: "application/pdf", storageKey: "department", checksum: "department-checksum", status: "uploaded", metadata: { title: null, description: null, tags: [] },
+    category: null, department: "Operations", departmentId, classification: "internal", owner: user._id, effectiveDate: null, expiryDate: null, version: 1, versionLabel: "v1",
+    isArchived: false, archivedAt: null, archivedBy: null, deletedAt: null, deletedBy: null, quarantineStatus: "none", scanResult: null, uploadedBy: user._id,
+  } as unknown as Omit<DocumentDocument, "_id" | "createdAt" | "updatedAt">, { tenantId, version: 1, versionLabel: "v1", fileName: "department.pdf", fileSize: 1,
+    mimeType: "application/pdf", checksum: "department-checksum", storageKey: "department", uploadedBy: user._id, uploadReason: "initial", changeDescription: null,
+  } as Omit<DocumentVersionDocument, "_id" | "documentId" | "createdAt">);
+  const policy = await DocumentAccessPolicyModel.findOne({ tenantId, documentId: document._id }).lean().exec();
+  assert.ok(policy?.rules.some((rule) => rule.ruleId === `default-department-${departmentId}`));
+});

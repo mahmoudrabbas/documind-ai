@@ -151,6 +151,32 @@ describe("canonical retrieval authorization allowlist", () => {
     assert.equal(result.denialReason, undefined);
   });
 
+  test("department policy allows the matching department and denies other departments", async () => {
+    const departmentDocument = document({
+      documentId: "64a000000000000000000108",
+      departmentId: tenantAActor.departmentIds![0]!,
+    });
+    const otherDepartmentDocument = document({
+      documentId: "64a000000000000000000109",
+      departmentId: "64a000000000000000000099",
+    });
+    const departmentRule = (doc: CanonicalRetrievalDocument) => policy(doc, [{
+      ruleId: `default-department-${doc.departmentId}`,
+      effect: "allow",
+      subject: { type: "department", id: doc.departmentId! },
+      actions: ["discover", "read", "download", "use_in_ai"],
+    }]);
+    const policies = new Map([
+      [departmentDocument.documentId, departmentRule(departmentDocument)],
+      [otherDepartmentDocument.documentId, departmentRule(otherDepartmentDocument)],
+    ]);
+    const result = await resolveCanonicalRetrievalAuthorization(
+      { tenantId, actorId },
+      deps({ documents: [departmentDocument, otherDepartmentDocument], policies }),
+    );
+    assert.deepEqual(result.filter.allowedDocumentIds, [departmentDocument.documentId]);
+  });
+
   test("explicit deny wins over user allow", async () => {
     const doc = document({ documentId: "64a000000000000000000102" });
     const policies = new Map([
